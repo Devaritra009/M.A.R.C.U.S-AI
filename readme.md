@@ -22,12 +22,12 @@
 
 <br>
 
-### 💬 1. Autonomous Messaging Assistant & Multilingual Dating Wingman (`chat_assistant`)
+### 💬 1. Autonomous Multilingual Messaging Assistant (`chat_assistant`)
 * **Full Desktop Autonomy (No API Keys Required):** Operates directly on native desktop and web applications (WhatsApp, Instagram, and Facebook Messenger) using vision inspection and GUI automation.
 * **Continuous Self-Driving Chat Loop:** Runs autonomously in the background, continuously monitoring incoming messages and replying on the user's behalf until explicitly instructed to stop.
 * **Strictly Separated Modes:**
   * **Normal Mode (Default):** Polite, casual, natural everyday conversation for friends, family, and colleagues. Strictly prohibits flirtation or cheesy lines.
-  * **Realistic Dating Wingman Mode:** Authentic modern dating text chemistry (~70% natural curious chat, ~20-25% playful banter & subtle charm, ~5-10% witty punchlines). Works equally well for a boy impressing a girl or a girl impressing a boy.
+  * **Realistic Dating Wingman Mode:** Authentic modern dating text chemistry (~70% natural curious chat, ~20-25% playful banter & subtle charm, ~5-10% witty punchlines).
 * **Trilingual Fluency:** Seamless conversation in **English**, **Bengali (বাংলা & Benglish)**, and **Hindi (हिंदी & Hinglish)**.
 * **Intelligent Bubble Alignment & Anti-Self-Reply:** Detects left/right message alignment and uses fuzzy sequence matching (`SequenceMatcher >= 0.70`) against outgoing history to guarantee Marcus never replies to his own messages.
 * **"Active Chat" Zero-Config Start:** Simply say *"Marcus, handle this conversation"* or *"chat with Sneha"* — Marcus automatically attaches to the active chat without search disruption.
