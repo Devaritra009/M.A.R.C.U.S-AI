@@ -35,7 +35,7 @@ You can invoke the Creator Profile at any time via voice, text, or the UI:
   * *"Who made you?"*
   * *"Who is your creator?"*
   * *"Who is your master?"*
-  * *"Tell me about Aritra Sarkar"*
+ 
 * **Interactive Header Pill:** Click the **`👨‍💻 CREATOR`** pill in the top navigation island.
 
 #### Automated Workflow:
