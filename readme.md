@@ -15,7 +15,12 @@
 
 ---
 
-## 🚀 What's New in Version 1.1
+## 🚀 Version Updates & Changelog
+
+<details>
+<summary><b>✨ What's New in Version 1.1 (Click to Expand)</b></summary>
+
+<br>
 
 ### 💬 1. Autonomous Messaging Assistant & Multilingual Dating Wingman (`chat_assistant`)
 * **Full Desktop Autonomy (No API Keys Required):** Operates directly on native desktop and web applications (WhatsApp, Instagram, and Facebook Messenger) using vision inspection and GUI automation.
@@ -39,6 +44,8 @@
 
 ### 🔤 4. Typography & Indic OpenType Support
 * Integrated Microsoft **`Nirmala UI`** as native font fallback for Bengali and Hindi scripts, eliminating Qt font database engine warnings (`qt.text.font.db`).
+
+</details>
 
 ---
 
@@ -70,7 +77,10 @@ You can invoke the Creator Profile at any time via voice, text, or the UI:
 
 ---
 
-## 🚀 Key Highlights in Version 1.0
+<details>
+<summary><b>📜 Previous Releases: Key Highlights in Version 1.0 (Click to Expand)</b></summary>
+
+<br>
 
 ### 1. 🎨 Cyber-Obsidian & Neon Glass Interface
 * **Refined Aesthetics:** Deep obsidian canvas (`#03070d`), elevated glassmorphic panels (`#08101a`), neon-cyan accent highlights (`#00e5ff`), and subtle 1px border framing.
@@ -94,25 +104,28 @@ You can invoke the Creator Profile at any time via voice, text, or the UI:
 * Instant conversational turn-taking with ambient noise suppression and self-echo rejection.
 * Hybrid multi-modal input: speak naturally or type commands directly into the prompt bar.
 
-### 4. ⚡ 17 Native Autonomous Actions
-MARCUS comes pre-equipped with 17 autonomous file-backed actions, auto-discovered at runtime via `core/action_loader.py`:
-1. **`creator_profile`**: Creator & Master presentation workflow (portfolio & LinkedIn).
-2. **`browser_control`**: Open URLs, switch tabs, search, and navigate web pages.
-3. **`code_helper`**: Review, debug, and generate code snippets inline.
-4. **`computer_control`**: System volume, screen brightness, WiFi toggle, lock, and shutdown controls.
-5. **`computer_settings`**: Manage OS-level settings and quick toggles.
-6. **`desktop_control`**: Minimize, maximize, focus, and arrange active application windows.
-7. **`dev_agent`**: Autonomous multi-step development agent for code refactoring and project planning.
-8. **`file_controller`**: Locate, organize, open, move, and manage local files.
-9. **`file_processor`**: Read, summarize, and extract insights from documents (PDF, DOCX, TXT, CSV).
-10. **`flight_finder`**: Query real-time flight availability and route pricing.
-11. **`game_updater`**: Scan and trigger background updates for Steam and Epic Games titles.
-12. **`open_app`**: Launch any native desktop application by common name or alias.
-13. **`reminder`**: Schedule native operating system notifications and persistent timers.
-14. **`screen_processor`**: Capture and analyze current screen content or webcam frames.
-15. **`send_message`**: Compose and dispatch communications via WhatsApp, Telegram, or Discord.
-16. **`system_monitor`**: Inspect CPU, GPU, memory, and thermal telemetry metrics.
-17. **`weather_report`**: Real-time localized meteorological forecasts and conditions.
+### 4. ⚡ 18 Native Autonomous Actions
+MARCUS comes pre-equipped with 18 autonomous file-backed actions, auto-discovered at runtime via `core/action_loader.py`:
+1. **`chat_assistant`**: Autonomous messaging assistant and dating wingman for WhatsApp, Instagram, and Messenger.
+2. **`creator_profile`**: Creator & Master presentation workflow (portfolio & LinkedIn).
+3. **`browser_control`**: Open URLs, switch tabs, search, and navigate web pages.
+4. **`code_helper`**: Review, debug, and generate code snippets inline.
+5. **`computer_control`**: System volume, screen brightness, WiFi toggle, lock, and shutdown controls.
+6. **`computer_settings`**: Manage OS-level settings and quick toggles.
+7. **`desktop_control`**: Minimize, maximize, focus, and arrange active application windows.
+8. **`dev_agent`**: Autonomous multi-step development agent for code refactoring and project planning.
+9. **`file_controller`**: Locate, organize, open, move, and manage local files.
+10. **`file_processor`**: Read, summarize, and extract insights from documents (PDF, DOCX, TXT, CSV).
+11. **`flight_finder`**: Query real-time flight availability and route pricing.
+12. **`game_updater`**: Scan and trigger background updates for Steam and Epic Games titles.
+13. **`open_app`**: Launch any native desktop application by common name or alias.
+14. **`reminder`**: Schedule native operating system notifications and persistent timers.
+15. **`screen_processor`**: Capture and analyze current screen content or webcam frames.
+16. **`send_message`**: Compose and dispatch communications via WhatsApp, Telegram, or Discord.
+17. **`system_monitor`**: Inspect CPU, GPU, memory, and thermal telemetry metrics.
+18. **`weather_report`**: Real-time localized meteorological forecasts and conditions.
+
+</details>
 
 ---
 
@@ -275,6 +288,6 @@ MARCUS includes a built-in HTTPS remote control dashboard:
 ---
 
 <p align="center">
-  <b>MARCUS v1.0</b> • <i>Curious. Creative. Experimental.</i><br>
+  <b>MARCUS v1.1</b> • <i>Curious. Creative. Experimental.</i><br>
   Built with ❤️ by Aritra Sarkar
 </p>
