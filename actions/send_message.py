@@ -244,7 +244,18 @@ def send_message(
     if not receiver:
         return "Please specify a recipient."
     if not message_text:
-        return "Please specify the message content."
+        # Check if user wanted a pickup line or dating compliment
+        mode = params.get("mode", "").strip().lower()
+        lang = params.get("language", "auto").strip().lower()
+        if mode in ("dating", "flirty", "compliment", "pickup_line") or "dating" in params:
+            try:
+                from actions.chat_assistant import _get_curated_line
+                message_text = _get_curated_line(lang, "compliments" if mode == "compliment" else "pickup_lines", mode="dating")
+            except Exception:
+                pass
+
+    if not message_text:
+        return "Please specify the message content (or set mode='dating' to send a pickup line)."
     if not _PYAUTOGUI:
         return "PyAutoGUI is not installed — cannot control the desktop."
 
@@ -269,7 +280,11 @@ def send_message(
 # ── Tool declaration (auto-discovered by core/action_loader.py) ──────────────
 TOOL = {
     "name": "send_message",
-    "description": "Sends a text message via WhatsApp, Telegram, or other messaging platform.",
+    "description": (
+        "Sends a single one-off text message via WhatsApp, Instagram, Telegram, or Facebook Messenger. "
+        "For ongoing autonomous conversations, chat takeover, dating wingman, and multilingual chat loops "
+        "that keep replying until stopped, use the chat_assistant tool instead."
+    ),
     "parameters": {
         "type": "OBJECT",
         "properties": {
@@ -279,16 +294,23 @@ TOOL = {
             },
             "message_text": {
                 "type": "STRING",
-                "description": "The message to send"
+                "description": "The message to send (optional if mode='dating')"
             },
             "platform": {
                 "type": "STRING",
-                "description": "Platform: WhatsApp, Telegram, etc."
+                "description": "Platform: WhatsApp, Instagram, Telegram, Messenger"
+            },
+            "mode": {
+                "type": "STRING",
+                "description": "Optional: 'dating', 'compliment', or 'pickup_line' to auto-generate a charismatic message"
+            },
+            "language": {
+                "type": "STRING",
+                "description": "Optional language: 'english', 'bengali', 'hindi'"
             }
         },
         "required": [
             "receiver",
-            "message_text",
             "platform"
         ]
     },

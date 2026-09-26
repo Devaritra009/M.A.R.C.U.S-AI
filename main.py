@@ -1,5 +1,8 @@
+import os as _os
 import platform as _platform
 import subprocess as _subprocess
+
+_os.environ.setdefault("QT_LOGGING_RULES", "qt.text.font.db=false;qt.text.font.db.warning=false")
 
 # ── Nuclear: force CREATE_NO_WINDOW on EVERY subprocess call on Windows ───────
 # This patches Popen itself, so no per-file flag is needed anywhere.
@@ -256,6 +259,7 @@ TOOL_DECLARATIONS = [
             "Captures the screen or webcam image and lets you analyze it. "
             "MUST be called when user asks what is on screen, what you see, "
             "look at camera, analyze my screen, etc. "
+            "Do NOT call this for messaging or chatting with people (use chat_assistant instead). "
             "You have NO visual ability without this tool. "
             "After the image is captured it is sent directly to you — describe what you see and answer the user's question. "
             "When using camera: the live view stays open until user says close it or calls close_camera."
@@ -834,6 +838,7 @@ class MarcusLive:
             if drained:
                 print(f"[MARCUS] ✋ Interrupted — {drained} audio chunks discarded")
         self.set_speaking(False)
+        self._audio_remainder = b""
         self._play_cursor = 0.0     # next batch starts a fresh timeline
         if self._turn_done_event:
             self._turn_done_event.clear()
@@ -1087,12 +1092,7 @@ class MarcusLive:
                     # acknowledgement here is what produced two spoken answers —
                     # the model filled that turn by answering the question from
                     # imagination, then answered it again once it could see.
-                    result = (
-                        f"[VISION_ACTIVE] {_stall.capitalize()} captured and attached to this "
-                        f"same exchange. Do not acknowledge and do not answer yet — the image "
-                        f"is arriving with this result. Reply once, from what you actually see "
-                        f"in it."
-                    )
+                    result = f"[VISION_ACTIVE] {_stall.capitalize()} image attached. Inspect the image and respond directly."
 
             elif name == "close_camera":
                 self.ui.stop_camera_stream()
@@ -1389,12 +1389,23 @@ class MarcusLive:
                         else:
                             if self._turn_done_event and self._turn_done_event.is_set():
                                 self._turn_done_event.clear()
+                            
+                            _raw_bytes = response.data
+                            if hasattr(self, "_audio_remainder") and self._audio_remainder:
+                                _raw_bytes = self._audio_remainder + _raw_bytes
+                                self._audio_remainder = b""
+                            
+                            # Ensure 16-bit sample alignment (must be multiple of 2 bytes)
+                            if len(_raw_bytes) % 2 != 0:
+                                self._audio_remainder = _raw_bytes[-1:]
+                                _raw_bytes = _raw_bytes[:-1]
+                                
                             # Split into ~50 ms chunks so interrupt() stops audio within 50 ms
-                            # (24000 Hz × 2 bytes/sample × 0.05 s = 2400 bytes per slice)
-                            _audio_data = response.data
                             _SLICE = 2400
-                            for _i in range(0, len(_audio_data), _SLICE):
-                                self.audio_in_queue.put_nowait(_audio_data[_i : _i + _SLICE])
+                            for _i in range(0, len(_raw_bytes), _SLICE):
+                                chunk = _raw_bytes[_i : _i + _SLICE]
+                                if chunk:
+                                    self.audio_in_queue.put_nowait(chunk)
 
                     if response.server_content:
                         sc = response.server_content
@@ -1480,8 +1491,12 @@ class MarcusLive:
                         )
                         await self._flush_pending_vision()
         except Exception as e:
-            print(f"[MARCUS] ❌ Recv: {e}")
-            traceback.print_exc()
+            err_msg = str(e)
+            if any(term in err_msg for term in ("1008", "GoAway", "1006", "close frame")):
+                print(f"[MARCUS] 🔄 Live session duration limit reached ({err_msg[:60]}) — renewing connection...")
+            else:
+                print(f"[MARCUS] ❌ Recv: {e}")
+                traceback.print_exc()
             raise
 
     async def _play_audio(self):
@@ -1497,7 +1512,7 @@ class MarcusLive:
                 samplerate=RECEIVE_SAMPLE_RATE,
                 channels=CHANNELS,
                 dtype="int16",
-                blocksize=CHUNK_SIZE,
+                blocksize=0,
                 device=dev,
             )
             st.start()
@@ -1556,6 +1571,12 @@ class MarcusLive:
                         batch.extend(self.audio_in_queue.get_nowait())
                     except asyncio.QueueEmpty:
                         break
+
+                # Ensure batch is strictly even-length (2 bytes per int16 sample)
+                if len(batch) % 2 != 0:
+                    batch = batch[:-1]
+                if not batch:
+                    continue
 
                 # Drive the HUD waveform and Arc Reactor Core from MARCUS's voice
                 try:

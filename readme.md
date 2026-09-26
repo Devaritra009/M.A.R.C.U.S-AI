@@ -1,19 +1,44 @@
-# ⚙️ MARCUS v1.0
+# ⚙️ MARCUS v1.1
 ### The Ultimate Autonomous Real-Time Personal AI Assistant
 **Created by [Aritra Sarkar](https://aritrasarkarportfolio.vercel.app/)**  
 [![Portfolio](https://img.shields.io/badge/Portfolio-Aritra_Sarkar-00e5ff?style=for-the-badge&logo=vercel&logoColor=white)](https://aritrasarkarportfolio.vercel.app/)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-devaritra-0a66c2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/devaritra/)
-[![Version](https://img.shields.io/badge/Version-1.0_Release-00ff9d?style=for-the-badge)](https://github.com/)
+[![Version](https://img.shields.io/badge/Version-1.1_Release-00ff9d?style=for-the-badge)](https://github.com/)
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
 ---
 
-## 🌟 Welcome to MARCUS v1.0
+## 🌟 Welcome to MARCUS v1.1
 
-**MARCUS v1.0** is a premier, cross-platform personal AI operating system and assistant engineered from the ground up to hear, see, speak, reason, and operate your machine in real time. Powered by Google's native **Gemini Live API**, MARCUS delivers bidirectional voice conversations, computer control, vision understanding, and an extensible plugin ecosystem — with **zero subscriptions** and **total user autonomy**.
+**MARCUS v1.1** is a premier, cross-platform personal AI operating system and assistant engineered from the ground up to hear, see, speak, reason, and operate your machine in real time. Powered by Google's native **Gemini Live API**, MARCUS delivers bidirectional voice conversations, computer control, vision understanding, and an extensible plugin ecosystem — with **zero subscriptions** and **total user autonomy**.
 
-Version 1.0 represents a monumental milestone, featuring a completely revamped **Cyber-Obsidian & Neon Glass** desktop interface, real-time pulsing Arc Reactor Core HUD, unified hardware telemetry, automated creator profile workflows, and 17 autonomous action capabilities.
+---
+
+## 🚀 What's New in Version 1.1
+
+### 💬 1. Autonomous Messaging Assistant & Multilingual Dating Wingman (`chat_assistant`)
+* **Full Desktop Autonomy (No API Keys Required):** Operates directly on native desktop and web applications (WhatsApp, Instagram, and Facebook Messenger) using vision inspection and GUI automation.
+* **Continuous Self-Driving Chat Loop:** Runs autonomously in the background, continuously monitoring incoming messages and replying on the user's behalf until explicitly instructed to stop.
+* **Strictly Separated Modes:**
+  * **Normal Mode (Default):** Polite, casual, natural everyday conversation for friends, family, and colleagues. Strictly prohibits flirtation or cheesy lines.
+  * **Realistic Dating Wingman Mode:** Authentic modern dating text chemistry (~70% natural curious chat, ~20-25% playful banter & subtle charm, ~5-10% witty punchlines). Works equally well for a boy impressing a girl or a girl impressing a boy.
+* **Trilingual Fluency:** Seamless conversation in **English**, **Bengali (বাংলা & Benglish)**, and **Hindi (हिंदी & Hinglish)**.
+* **Intelligent Bubble Alignment & Anti-Self-Reply:** Detects left/right message alignment and uses fuzzy sequence matching (`SequenceMatcher >= 0.70`) against outgoing history to guarantee Marcus never replies to his own messages.
+* **"Active Chat" Zero-Config Start:** Simply say *"Marcus, handle this conversation"* or *"chat with Sneha"* — Marcus automatically attaches to the active chat without search disruption.
+
+### ⚡ 2. Gemini Free-Tier Quota Optimization
+* **Smart Model Fallback Ladders:** Prioritizes `gemini-flash-lite-latest`, `gemini-3.1-flash-lite`, and `gemini-3.5-flash-lite` to provide high RPM and bypass strict 20-request/day limits on `gemini-3.8-flash`.
+* **MD5 Screen Change Detection:** Skips redundant Vision API calls when the chat window hasn't changed, saving over 90% of free-tier API quota.
+* **Automatic Error Cooldown:** Detects 503/429 spikes and applies a safe 5-minute cooldown per model to avoid cascading timeouts.
+
+### 🎙️ 3. Audio & Voice Pitch Stabilization
+* **Strict 16-Bit PCM Alignment:** Enforces 2-byte sample boundaries across incoming chunks, eliminating robotic buzzing, squeaking, and pitch-wobble caused by odd-byte offsets.
+* **Dynamic Stream Buffering (`blocksize=0`):** Prevents MME buffer underflow and sample-rate desynchronization on USB DACs and headsets.
+* **Steady Baritone Vocal Directive:** Configured prompt protocols to enforce a calm, deep masculine baritone register with even pacing and unwavering pitch.
+
+### 🔤 4. Typography & Indic OpenType Support
+* Integrated Microsoft **`Nirmala UI`** as native font fallback for Bengali and Hindi scripts, eliminating Qt font database engine warnings (`qt.text.font.db`).
 
 ---
 

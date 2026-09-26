@@ -15,6 +15,9 @@ from pathlib import Path
 # Silence deprecated pynvml package warning in favor of nvidia-ml-py
 warnings.filterwarnings("ignore", category=FutureWarning, message=r".*pynvml.*")
 
+# Suppress Qt font database warnings for scripts not covered by Latin-only font files
+os.environ.setdefault("QT_LOGGING_RULES", "qt.text.font.db=false;qt.text.font.db.warning=false")
+
 import psutil
 
 if platform.system() == "Windows":
@@ -23,9 +26,13 @@ else:
     _WIN_HIDE: dict = {}
 
 from PyQt6.QtCore import (
-    QLineF, QPointF,
+    QLineF, QLoggingCategory, QPointF,
     QRectF, Qt, QTimer, pyqtSignal,
 )
+try:
+    QLoggingCategory.setFilterRules("qt.text.font.db=false;qt.text.font.db.warning=false")
+except Exception:
+    pass
 from PyQt6.QtGui import (
     QBrush, QColor, QConicalGradient, QDragEnterEvent, QDropEvent, QFont,
     QKeySequence, QLinearGradient, QPainter,
@@ -59,7 +66,7 @@ def _read_full_config() -> dict:
 
 # Single source of truth for the release name — the window title, the header
 # badge and the readme must never disagree again.
-APP_VERSION  = "MARCUS v1.0"
+APP_VERSION  = "MARCUS v1.1"
 APP_PROTOCOL = APP_VERSION.split()[-1]
 
 _DEFAULT_W, _DEFAULT_H = 1160, 780
@@ -75,12 +82,12 @@ _BODY_FONT  = "Montserrat"
 
 def title_font(size: int, weight: QFont.Weight = QFont.Weight.Bold) -> QFont:
     f = QFont(_TITLE_FONT, size, weight)
-    f.setFamilies([_TITLE_FONT, "Montserrat", "Segoe UI", "Arial"])
+    f.setFamilies([_TITLE_FONT, "Montserrat", "Segoe UI", "Nirmala UI", "Arial"])
     return f
 
 def body_font(size: int, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
     f = QFont(_BODY_FONT, size, weight)
-    f.setFamilies([_BODY_FONT, "Segoe UI", "Calibri", "Arial"])
+    f.setFamilies([_BODY_FONT, "Segoe UI", "Nirmala UI", "Calibri", "Arial"])
     return f
 
 
@@ -3647,6 +3654,9 @@ class MainWindow(QMainWindow):
                     color: {C.PRI}; border-color: {C.PRI_DIM}; background: {C.PRI_GHO};
                 }}
             """)
+            if callback:
+                btn.clicked.connect(callback)
+            return btn
         # Telemetry Toggle Pill
         self._sys_toggle_btn = _pill_btn("📊 SYS", "Toggle Hardware Telemetry Sidebar", self._toggle_telemetry)
         right_box.addWidget(self._sys_toggle_btn)
