@@ -15,11 +15,19 @@ from pathlib import Path
 
 import numpy as np
 
-try:
-    import cv2
-    _CV2 = True
-except ImportError:
-    _CV2 = False
+_CV2_MOD = None
+_CV2_TRIED = False
+
+def _get_cv2():
+    global _CV2_MOD, _CV2_TRIED
+    if not _CV2_TRIED:
+        _CV2_TRIED = True
+        try:
+            import cv2
+            _CV2_MOD = cv2
+        except ImportError:
+            _CV2_MOD = None
+    return _CV2_MOD
 
 try:
     import mss
@@ -125,7 +133,8 @@ def _capture_screen() -> tuple[bytes, str]:
 
 def _cv2_backend() -> int:
     """Return the best OpenCV camera backend for the current OS."""
-    if not _CV2:
+    cv2 = _get_cv2()
+    if not cv2:
         return 0
     os_name = _get_os()
     if os_name == "windows":
@@ -136,8 +145,8 @@ def _cv2_backend() -> int:
 
 
 def _probe_camera(index: int, backend: int, warmup: int = 5) -> bool:
-
-    if not _CV2:
+    cv2 = _get_cv2()
+    if not cv2:
         return False
     cap = cv2.VideoCapture(index, backend)
     if not cap.isOpened():
@@ -153,7 +162,6 @@ def _probe_camera(index: int, backend: int, warmup: int = 5) -> bool:
 
 
 def _detect_camera_index() -> int:
-
     backend = _cv2_backend()
     print("[Vision] 🔍 Auto-detecting camera...")
     for idx in range(6):
@@ -176,7 +184,8 @@ def _get_camera_index() -> int:
 
 
 def _capture_camera() -> tuple[bytes, str]:
-    if not _CV2:
+    cv2 = _get_cv2()
+    if not cv2:
         raise RuntimeError("OpenCV (cv2) is not installed. Run: pip install opencv-python")
 
     index   = _get_camera_index()

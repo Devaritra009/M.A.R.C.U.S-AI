@@ -32,6 +32,7 @@ _CORE: list[tuple[str, str]] = [
     ("miniaudio",          "miniaudio"),
     ("send2trash",         "send2trash"),
     ("pptx",               "python-pptx"),
+    ("docx",               "python-docx"),
     ("youtube_transcript_api", "youtube-transcript-api"),
 ]
 

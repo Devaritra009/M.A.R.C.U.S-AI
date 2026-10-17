@@ -12,13 +12,30 @@ import webbrowser
 from pathlib import Path
 from typing import Optional
 
-from playwright.async_api import (
-    async_playwright,
-    BrowserContext,
-    Page,
-    Playwright,
-    TimeoutError as PlaywrightTimeout,
-)
+# Playwright is lazy-loaded on demand to preserve RAM (~10 MB savings at startup)
+_PW_ASYNC = None
+
+def _get_playwright_async():
+    global _PW_ASYNC
+    if _PW_ASYNC is None:
+        import playwright.async_api as pw
+        _PW_ASYNC = pw
+    return _PW_ASYNC
+
+def _timeout_classes():
+    pw = _PW_ASYNC
+    if pw and hasattr(pw, "TimeoutError"):
+        return (PlaywrightTimeout, pw.TimeoutError)
+    return (PlaywrightTimeout,)
+
+# Type placeholders for type annotations under __future__.annotations
+BrowserContext = object
+Page = object
+Playwright = object
+
+class PlaywrightTimeout(Exception):
+    pass
+
 _OS = platform.system()   # "Windows" | "Darwin" | "Linux"
 
 def _normalize_url(url: str) -> str:
@@ -478,7 +495,8 @@ class _BrowserSession:
         self._loop.run_forever()
 
     async def _async_init(self):
-        self._pw = await async_playwright().start()
+        pw = _get_playwright_async()
+        self._pw = await pw.async_playwright().start()
 
     def run(self, coro, timeout: int = 60) -> str:
         if not self._loop:
@@ -643,7 +661,7 @@ class _BrowserSession:
             try:
                 await p.goto(url, wait_until="domcontentloaded", timeout=30_000)
                 await asyncio.sleep(0.3)
-            except PlaywrightTimeout:
+            except _timeout_classes():
                 pass   # page may have partially loaded — check URL below
             except Exception as e:
                 print(f"[Browser] goto exception (non-fatal): {e}")
@@ -678,7 +696,7 @@ class _BrowserSession:
                 await page.click(selector, timeout=8_000)
                 return f"Clicked selector: {selector}"
             return "No selector or text provided."
-        except PlaywrightTimeout:
+        except _timeout_classes():
             return "Element not found (timeout)."
         except Exception as e:
             return f"Click error: {e}"

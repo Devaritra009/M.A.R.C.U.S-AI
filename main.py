@@ -85,6 +85,7 @@ from core.echo                 import EchoGuard
 from core.wake_word            import (
     WakeWordDetector, is_ready as wake_is_ready, install_and_download as wake_install,
 )
+from core.mem_trim             import optimize_ram
 
 # How long the assistant stays awake with no user speech before it auto-sleeps
 # again (wake-word mode only).
@@ -310,10 +311,10 @@ TOOL_DECLARATIONS = [
     {
         "name": "shutdown_marcus",
         "description": (
-            "Shuts down the assistant completely. "
-            "Call this when the user expresses intent to end the conversation, "
-            "close the assistant, say goodbye, or stop Marcus. "
-            "The user can say this in ANY language."
+            "Shuts down the MARCUS assistant application itself. "
+            "Call this immediately when the user asks to shutdown yourself, close marcus, "
+            "stop marcus, turn yourself off, exit, quit, or terminate the assistant session. "
+            "The user can say this in ANY language. Do NOT call computer_settings when user asks to shut down Marcus."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -442,6 +443,15 @@ def _keep_context_of(exc: BaseException) -> bool:
     return True
 
 
+def _flatten_exc_str(exc: BaseException) -> str:
+    """Recursively collect error messages from an Exception or BaseExceptionGroup."""
+    parts = [f"{type(exc).__name__}: {exc}"]
+    if isinstance(exc, BaseExceptionGroup):
+        for sub in exc.exceptions:
+            parts.append(_flatten_exc_str(sub))
+    return " | ".join(parts)
+
+
 class MarcusLive:
     def __init__(self, ui: MarcusUI):
         self.ui             = ui
@@ -563,6 +573,24 @@ class MarcusLive:
         self.ui.on_wake_toggle   = self._ui_wake_toggle   # (enable: bool) -> str
         self.ui.on_wake_manual   = self._ui_wake_manual   # () -> toggle awake/asleep
         self.ui.on_wake_install  = self._ui_wake_install  # () -> (ok, msg)
+        optimize_ram()
+
+    def _enqueue_mic_audio(self, chunk: dict) -> None:
+        """Thread-safe and queue-safe enqueue for microphone chunks.
+        Discards the oldest frames if backpressure builds up to ensure zero latency
+        and prevents QueueFull exceptions inside asyncio loop callbacks.
+        """
+        q = self.out_queue
+        if q is None or not self.session:
+            return
+        try:
+            q.put_nowait(chunk)
+        except asyncio.QueueFull:
+            try:
+                q.get_nowait()
+                q.put_nowait(chunk)
+            except Exception:
+                pass
 
     # ── Wake word: state machine ─────────────────────────────────────────────
 
@@ -1117,19 +1145,23 @@ class MarcusLive:
 
             elif name in ("shutdown_marcus", "shutdown_jarvis"):
                 self.ui.write_log("SYS: Shutdown requested.")
+                result = "MARCUS assistant is shutting down now. Say a warm natural goodbye to the user."
+
                 async def _do_shutdown():
-                    await self._save_session_summary()
-                    if self.session:
-                        try:
-                            await self.session.send_client_content(
-                                turns={"role": "user", "parts": [{"text": "Say a brief natural goodbye to the user."}]},
-                                turn_complete=True,
-                            )
-                        except Exception:
-                            pass
-                    await asyncio.sleep(1.5)
+                    try:
+                        await asyncio.wait_for(self._save_session_summary(), timeout=2.5)
+                    except Exception as _e:
+                        print(f"[Shutdown] Session summary: {_e}")
+                    # Allow brief window for goodbye speech/audio to finish playing
+                    await asyncio.sleep(2.5)
+                    try:
+                        if hasattr(self.ui, "close"):
+                            self.ui.close()
+                    except Exception:
+                        pass
                     import os as _os
                     _os._exit(0)
+
                 asyncio.create_task(_do_shutdown())
 
             elif self._action_registry.has(name):
@@ -1204,78 +1236,58 @@ class MarcusLive:
         loop = asyncio.get_event_loop()
 
         def callback(indata, frames, time_info, status):
-            # ── Wake-word gate ───────────────────────────────────────────────
-            # While asleep, the mic audio NEVER goes to Gemini (nothing is
-            # streamed, so MARCUS can't respond to speech not addressed to it and
-            # nothing leaves the machine). Frames are instead handed to the local
-            # detector, which runs its model in ITS OWN thread — the cost here is
-            # only a queue push, so the audio path is never slowed. When wake word
-            # is off (default) or we're awake, this is a single boolean check.
-            if self._wake_enabled and not self._awake:
-                det = self._wake_detector
-                if det is not None:
-                    det.feed(indata)
-                return
-            with self._speaking_lock:
-                marcus_speaking = self._is_speaking
-
-            # ── Barge-in ─────────────────────────────────────────────────────
-            # While MARCUS talks the mic is not streamed, but it is still worth
-            # listening to locally: if the user starts speaking, cut the answer
-            # short the way a person would stop when interrupted.
-            #
-            # The whole difficulty is echo — on speakers the mic hears MARCUS.
-            # So the test is not "is the mic loud" but "is the mic louder than
-            # the echo of what we are playing right now", sustained long enough
-            # that a cough or a keystroke cannot trigger it.
-            if marcus_speaking:
-                # Nothing is streamed while MARCUS talks.
-                #
-                # Interrupting by voice used to live here: `EchoGuard` can pick a
-                # user out from under our own echo, and `core/echo.py` still does
-                # that for the tail below. Re-enabling is small — classify each
-                # block here and call interrupt() after `required_blocks` of
-                # agreement — but it depends on the listener's room, so it stays
-                # out until it can be tried on real hardware.
-                return
-
-            # ── Echo tail ────────────────────────────────────────────────────
-            # The speaking flag has dropped but the speakers have not finished.
-            # Sending this to the model is how an assistant hears itself, decides
-            # it was addressed, and answers its own last sentence. The microphone
-            # stays OPEN — the guard only drops blocks that are our own voice, so
-            # replying the instant it stops still works.
-            if self._tail_active():
-                try:
-                    if not self._echo.is_user_speech(
-                            indata, SEND_SAMPLE_RATE, _pcm_level(indata)):
-                        return
-                    self._tail_until = 0.0      # a real voice ends the tail early
-                except Exception:
+            try:
+                # ── Wake-word gate ───────────────────────────────────────────────
+                # While asleep, the mic audio NEVER goes to Gemini (nothing is
+                # streamed, so MARCUS can't respond to speech not addressed to it and
+                # nothing leaves the machine). Frames are instead handed to the local
+                # detector, which runs its model in ITS OWN thread — the cost here is
+                # only a queue push, so the audio path is never slowed. When wake word
+                # is off (default) or we're awake, this is a single boolean check.
+                if self._wake_enabled and not self._awake:
+                    det = self._wake_detector
+                    if det is not None:
+                        det.feed(indata)
                     return
-            elif self._echo._hist:
-                self._echo.reset()
+                with self._speaking_lock:
+                    marcus_speaking = self._is_speaking
 
-            # ── Push-to-talk ─────────────────────────────────────────────────
-            # When it is on the microphone is closed by default and the chord
-            # opens it, which is the whole point: nothing leaves the machine
-            # unless you are holding the key.
-            if self._ptt_enabled and not self._ptt_held:
-                return
+                # ── Barge-in ─────────────────────────────────────────────────────
+                if marcus_speaking:
+                    return
 
-            if not self.ui.muted and not self._phone_active:
-                data = indata.tobytes()
-                loop.call_soon_threadsafe(
-                    self.out_queue.put_nowait,
-                    {"data": data, "mime_type": "audio/pcm"}
-                )
-                # Feed the live mic level to the HUD so the waveform reacts to
-                # the user's actual voice while listening. Purely cosmetic — any
-                # failure here must never disturb the mic.
-                try:
-                    self.ui.set_audio_level(_pcm_level(indata))
-                except Exception:
-                    pass
+                # ── Echo tail ────────────────────────────────────────────────────
+                if self._tail_active():
+                    try:
+                        if not self._echo.is_user_speech(
+                                indata, SEND_SAMPLE_RATE, _pcm_level(indata)):
+                            return
+                        self._tail_until = 0.0      # a real voice ends the tail early
+                    except Exception:
+                        return
+                elif self._echo._hist:
+                    self._echo.reset()
+
+                # ── Push-to-talk ─────────────────────────────────────────────────
+                if self._ptt_enabled and not self._ptt_held:
+                    return
+
+                if not self.ui.muted and not self._phone_active:
+                    data = indata.tobytes()
+                    if loop.is_running():
+                        loop.call_soon_threadsafe(
+                            self._enqueue_mic_audio,
+                            {"data": data, "mime_type": "audio/pcm"}
+                        )
+                    # Feed the live mic level to the HUD so the waveform reacts to
+                    # the user's actual voice while listening. Purely cosmetic — any
+                    # failure here must never disturb the mic.
+                    try:
+                        self.ui.set_audio_level(_pcm_level(indata))
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
         try:
             def _open_mic(dev):
@@ -1404,8 +1416,11 @@ class MarcusLive:
                             _SLICE = 2400
                             for _i in range(0, len(_raw_bytes), _SLICE):
                                 chunk = _raw_bytes[_i : _i + _SLICE]
-                                if chunk:
-                                    self.audio_in_queue.put_nowait(chunk)
+                                if chunk and self.audio_in_queue is not None:
+                                    try:
+                                        self.audio_in_queue.put_nowait(chunk)
+                                    except Exception:
+                                        pass
 
                     if response.server_content:
                         sc = response.server_content
@@ -1492,8 +1507,8 @@ class MarcusLive:
                         await self._flush_pending_vision()
         except Exception as e:
             err_msg = str(e)
-            if any(term in err_msg for term in ("1008", "GoAway", "1006", "close frame")):
-                print(f"[MARCUS] 🔄 Live session duration limit reached ({err_msg[:60]}) — renewing connection...")
+            if any(term in err_msg.lower() for term in ("1008", "goaway", "1006", "close frame", "duration limit", "deadline")):
+                print(f"[MARCUS] 🔄 Live session renewal required ({err_msg[:60]}) — reconnecting...")
             else:
                 print(f"[MARCUS] ❌ Recv: {e}")
                 traceback.print_exc()
@@ -1759,7 +1774,7 @@ class MarcusLive:
         try:
             from core import gemini
             summary = await asyncio.to_thread(
-                gemini.text, prompt, gemini.SMART, None, 30_000,
+                gemini.text, prompt, gemini.FAST, None, 15_000,
             )
             if summary:
                 save_session_summary(summary, lang)
@@ -1769,9 +1784,13 @@ class MarcusLive:
     # ── System monitor ──────────────────────────────────────────────────────────
 
     async def _run_system_monitor(self) -> None:
-        """Background task: voice alerts when metrics exceed thresholds."""
+        """Background task: voice alerts when metrics exceed thresholds and periodic memory trimming."""
+        _trim_tick = 0
         while True:
             await asyncio.sleep(10)
+            _trim_tick += 1
+            if _trim_tick % 6 == 0:
+                await asyncio.to_thread(optimize_ram)
             alert = await asyncio.to_thread(self._sys_monitor.check)
             if not alert or not self.session or not self._awake:
                 continue
@@ -1958,6 +1977,8 @@ class MarcusLive:
             print(f"[Dashboard] Disabled: {e}")
             self._dashboard = None
 
+        self._loop = asyncio.get_running_loop()
+
         while True:
             try:
                 print("[MARCUS] Connecting...")
@@ -2053,39 +2074,33 @@ class MarcusLive:
                     self._conn_backoff = 0
                     continue
 
+                err_str = _flatten_exc_str(e)
+                print(f"[MARCUS] Error ({type(e).__name__}): {err_str[:180]}")
+                traceback.print_exc()
+
                 # A resumption handle the server will not accept — expired, or
-                # belonging to a session it has since dropped. Without this, the
-                # same dead handle would be replayed on every retry and the
-                # assistant would never come back at all: the feature meant to
-                # survive a reconnect would be the thing preventing one. Drop it
-                # once and let the next attempt start clean.
-                if _resumed_with and (
-                    "resum" in str(e).lower()
-                    or "handle" in str(e).lower()
-                    or "INVALID_ARGUMENT" in str(e)
-                    or "NOT_FOUND" in str(e)
+                # belonging to a session it has since dropped. Unwrapped via
+                # _flatten_exc_str to properly detect nested BaseExceptionGroup causes.
+                if _resumed_with and any(
+                    term in err_str.lower()
+                    for term in ("resum", "handle", "invalid_argument", "not_found", "1008", "1007", "duration limit")
                 ):
-                    print("[MARCUS] 🔗 Resumption handle rejected — starting a fresh session")
-                    self.ui.write_log("SYS: Could not restore the conversation — starting fresh.")
+                    print("[MARCUS] 🔗 Resumption handle rejected/expired — starting a fresh session")
+                    self.ui.write_log("SYS: Session expired — starting fresh connection.")
                     self._resume_handle = None
                     self._conn_backoff = 0
                     continue
-
-                err_str = str(e)
-                print(f"[MARCUS] Error ({type(e).__name__}): {e}")
-                traceback.print_exc()
 
                 # Turn-taking / media / thinking knobs rejected by the server
                 # (preview API drift) — drop them first, because they are the
                 # newest fields and the cheapest to lose. Proactive audio is
                 # tried again on the next pass if the error persists.
-                if self._tuned_live and (
-                    "INVALID_ARGUMENT" in err_str
-                    or "Unknown name" in err_str
-                    or "unexpected keyword" in err_str
-                    or "realtime_input" in err_str.lower()
-                    or "media_resolution" in err_str.lower()
-                    or "thinking" in err_str.lower()
+                if self._tuned_live and any(
+                    term in err_str
+                    for term in (
+                        "INVALID_ARGUMENT", "Unknown name", "unexpected keyword",
+                        "realtime_input", "media_resolution", "thinking"
+                    )
                 ):
                     self._tuned_live = False
                     print("[MARCUS] Live tuning rejected — reconnecting without it.")
@@ -2093,11 +2108,9 @@ class MarcusLive:
 
                 # Proactive audio rejected by the server (preview API drift) —
                 # drop it and reconnect with the plain config.
-                if self._enhanced_live and (
-                    "INVALID_ARGUMENT" in err_str
-                    or "proactiv" in err_str.lower()
-                    or "Unknown name" in err_str
-                    or "unexpected keyword" in err_str
+                if self._enhanced_live and any(
+                    term in err_str.lower()
+                    for term in ("invalid_argument", "proactiv", "unknown name", "unexpected keyword")
                 ):
                     self._enhanced_live = False
                     self.ui.write_log(
@@ -2132,6 +2145,12 @@ class MarcusLive:
                     self._conn_backoff = 3
             finally:
                 self.session = None
+                if self.out_queue is not None:
+                    while not self.out_queue.empty():
+                        try:
+                            self.out_queue.get_nowait()
+                        except Exception:
+                            break
                 # Only save if there was a real conversation (≥3 turns)
                 if len(self._session_log) >= 3:
                     asyncio.create_task(self._save_session_summary())

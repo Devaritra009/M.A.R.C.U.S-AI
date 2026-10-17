@@ -64,14 +64,27 @@ def _safe_log(player, text: str):
                 pass
 
 
-# Automation dependencies
-try:
-    import pyautogui
-    pyautogui.FAILSAFE = True
-    pyautogui.PAUSE = 0.05
-    _PYAUTOGUI = True
-except ImportError:
-    _PYAUTOGUI = False
+# Automation dependencies (lazy-loaded on demand to preserve RAM)
+_pa_mod = None
+
+def _require_pyautogui():
+    global _pa_mod
+    if _pa_mod is None:
+        try:
+            import pyautogui as _pa
+            _pa.FAILSAFE = True
+            _pa.PAUSE = 0.05
+            _pa_mod = _pa
+        except ImportError:
+            raise RuntimeError("PyAutoGUI not installed. Run: pip install pyautogui")
+    return _pa_mod
+
+class _LazyPyAutoGUI:
+    def __getattr__(self, name):
+        return getattr(_require_pyautogui(), name)
+
+pyautogui = _LazyPyAutoGUI()
+_PYAUTOGUI = True
 
 try:
     import pyperclip
@@ -80,7 +93,13 @@ except ImportError:
     _PYPERCLIP = False
 
 from core import gemini
-from google.genai import types as gtypes
+
+class _LazyGTypes:
+    def __getattr__(self, name):
+        from google.genai import types
+        return getattr(types, name)
+
+gtypes = _LazyGTypes()
 
 try:
     from actions.screen_processor import _capture_screen
@@ -406,9 +425,6 @@ _CHAT_MANAGER = ChatManager()
 
 # ── GUI Automation & App Control ─────────────────────────────────────────────
 
-def _require_pyautogui():
-    if not _PYAUTOGUI:
-        raise RuntimeError("PyAutoGUI not installed. Run: pip install pyautogui")
 
 
 def _paste_unicode_text(text: str) -> None:
@@ -927,19 +943,21 @@ def _chat_worker_loop(session: ChatSession, player=None, speak=None):
             session.history.append({"sender": "User", "text": starter, "time": time.time()})
             _safe_log(player, f"[Chat] Sent to {session.contact}: {starter[:45]}...")
             _update_hud_content(player, session)
-            time.sleep(2.0)
+            time.sleep(1.0)
         except Exception as e:
             _safe_print(f"[ChatAssistant] Failed to send opening message: {e}")
 
     # Step 3: Main autonomous observation & auto-reply loop
-    poll_interval = 5.0  # check every ~5 seconds
+    # Polling every 1.5s: Screen hash check takes ~20ms locally and uses 0 API quota when screen
+    # is unchanged. As soon as a message appears, it is detected and processed immediately.
+    poll_interval = 1.5
     max_safety_messages = 80  # safety threshold per session
 
     while not session.stop_event.is_set():
         # Sleep in small slices so stop_event is instantly responsive
-        sleep_until = time.time() + poll_interval + random.uniform(0.3, 1.0)
+        sleep_until = time.time() + poll_interval
         while time.time() < sleep_until and not session.stop_event.is_set():
-            time.sleep(0.4)
+            time.sleep(0.15)
 
         if session.stop_event.is_set():
             break
@@ -991,8 +1009,8 @@ def _chat_worker_loop(session: ChatSession, player=None, speak=None):
                     )
 
                 if reply and not session.stop_event.is_set():
-                    # Natural human-like typing delay (1.2s - 2.8s)
-                    typing_delay = max(1.2, min(2.8, len(reply) * 0.03 + random.uniform(0.6, 1.2)))
+                    # Natural human-like typing delay (0.6s - 1.6s)
+                    typing_delay = max(0.6, min(1.6, len(reply) * 0.02 + random.uniform(0.2, 0.5)))
                     _safe_print(f"[ChatAssistant] Simulating typing pause ({typing_delay:.1f}s)...")
                     time.sleep(typing_delay)
 
@@ -1016,7 +1034,7 @@ def _chat_worker_loop(session: ChatSession, player=None, speak=None):
                     _update_hud_content(player, session)
 
                     # Give chat app time to render outgoing bubble before next inspection
-                    time.sleep(2.0)
+                    time.sleep(1.0)
 
         except Exception as e:
             _safe_print(f"[ChatAssistant] Loop inspection error: {e}")

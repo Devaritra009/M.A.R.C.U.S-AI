@@ -65,6 +65,20 @@ def _undo_write(target: Path, previous: str | None):
     return _fn
 
 
+def _undo_write_bytes(target: Path, previous: bytes | None):
+    """Reverse of a binary write: restore previous bytes or delete created file."""
+    def _fn():
+        if previous is None:
+            if target.exists():
+                target.unlink()
+                return f"Removed '{target.name}' — it did not exist before."
+            return f"'{target.name}' is already gone."
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(previous)
+        return f"Restored previous version of '{target.name}'."
+    return _fn
+
+
 def _restore_from_trash(original: Path) -> str:
     """Best-effort undelete.
 
@@ -92,16 +106,41 @@ def _restore_from_trash(original: Path) -> str:
 
 _SAFE_ROOTS: list[Path] = [
     Path.home(),
+    Path.cwd(),
+    Path(__file__).resolve().parent.parent,
 ]
 
+_SYSTEM_BLOCKED_NAMES = {
+    "windows", "winnt", "system32", "syswow64", "program files",
+    "program files (x86)", "system volume information", "$recycle.bin",
+    "boot", "etc", "usr", "bin", "sbin", "sys", "proc", "dev",
+}
+
 def _is_safe_path(target: Path) -> bool:
-    """Is the given path inside _SAFE_ROOTS? If not, reject the operation."""
+    """Is the given path safe for file operations?
+    Permits user directories, project directory, home directory, and user drives,
+    while strictly protecting critical operating system directories.
+    """
     try:
         resolved = target.resolve()
-        return any(
-            resolved == root.resolve() or resolved.is_relative_to(root.resolve())
-            for root in _SAFE_ROOTS
-        )
+        parts = [p.lower() for p in resolved.parts]
+        for blocked in _SYSTEM_BLOCKED_NAMES:
+            if blocked in parts:
+                return False
+
+        if any(resolved == root.resolve() or resolved.is_relative_to(root.resolve()) for root in _SAFE_ROOTS):
+            return True
+
+        if _OS == "Windows":
+            if len(resolved.parts) <= 1:
+                return False
+            drive = resolved.drive.upper()
+            if drive:
+                if drive == "C:" and len(resolved.parts) <= 2 and not any(resolved.is_relative_to(r.resolve()) for r in _SAFE_ROOTS):
+                    return False
+                return True
+
+        return False
     except Exception:
         return False
 
@@ -226,13 +265,179 @@ def list_files(path: str = "desktop", show_hidden: bool = False) -> str:
         return f"Error listing files: {e}"
 
 
-def create_file(path: str, name: str = "", content: str = "") -> str:
+def _build_docx_file(target: Path, content: str, title: str = "") -> str:
+    """Build a rich Word document (.docx) using python-docx."""
+    try:
+        from docx import Document
+    except ImportError:
+        return "python-docx not installed. Run: pip install python-docx"
+
+    doc = Document()
+    doc_title = title.strip()
+    lines = content.strip().splitlines()
+
+    if not doc_title and lines and lines[0].startswith("# "):
+        doc_title = lines[0][2:].strip()
+        lines = lines[1:]
+
+    if doc_title:
+        doc.add_heading(doc_title, level=0)
+
+    current_para = None
+    for raw_line in lines:
+        s = raw_line.strip()
+        if not s:
+            current_para = None
+            continue
+
+        if s.startswith("# "):
+            doc.add_heading(s[2:].strip(), level=1)
+            current_para = None
+        elif s.startswith("## "):
+            doc.add_heading(s[3:].strip(), level=2)
+            current_para = None
+        elif s.startswith("### "):
+            doc.add_heading(s[4:].strip(), level=3)
+            current_para = None
+        elif s.startswith(("- ", "* ", "• ")):
+            doc.add_paragraph(s[2:].strip(), style="List Bullet")
+            current_para = None
+        elif len(s) > 2 and s[0].isdigit() and s[1:3] in (". ", ") "):
+            doc.add_paragraph(s[3:].strip(), style="List Number")
+            current_para = None
+        else:
+            if current_para is None:
+                current_para = doc.add_paragraph(s)
+            else:
+                current_para.add_run(" " + s)
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(target))
+    return f"Word document created: {target.name}"
+
+
+def _build_pptx_file(target: Path, content: str, title: str = "") -> str:
+    """Build a rich PowerPoint presentation (.pptx) using python-pptx."""
+    try:
+        from pptx import Presentation
+    except ImportError:
+        return "python-pptx not installed. Run: pip install python-pptx"
+
+    import re
+    prs = Presentation()
+
+    # Split into slides by Slide X: or --- or ##
+    raw_slides = re.split(r'\n\s*(?:---+|==+|Slide\s+\d+[:\-]|\#\#\s+)', content)
+    slides_data = [s.strip() for s in raw_slides if s.strip()]
+    if not slides_data:
+        slides_data = [content.strip()]
+
+    pres_title = title.strip() or target.stem.replace("_", " ").title()
+
+    for i, chunk in enumerate(slides_data):
+        lines = [line.strip() for line in chunk.splitlines() if line.strip()]
+        if not lines:
+            continue
+        slide_title = lines[0].lstrip('#').strip()
+        body_lines = lines[1:]
+
+        if i == 0 and len(slides_data) > 1:
+            slide = prs.slides.add_slide(prs.slide_layouts[0])
+            slide.shapes.title.text = pres_title or slide_title
+            if slide.placeholders and len(slide.placeholders) > 1:
+                slide.placeholders[1].text = "\n".join(body_lines) if body_lines else "Created with MARCUS AI"
+        else:
+            slide = prs.slides.add_slide(prs.slide_layouts[1])
+            slide.shapes.title.text = slide_title
+            body_shape = slide.shapes.placeholders[1]
+            tf = body_shape.text_frame
+            tf.word_wrap = True
+            first = True
+            for bline in body_lines:
+                clean_line = bline.lstrip("-*•0123456789. ")
+                if not clean_line:
+                    continue
+                if first:
+                    tf.paragraphs[0].text = clean_line
+                    first = False
+                else:
+                    p = tf.add_paragraph()
+                    p.text = clean_line
+                    p.level = 0
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    prs.save(str(target))
+    return f"PowerPoint presentation created: {target.name} ({len(prs.slides)} slides)"
+
+
+def create_pptx(path: str, name: str = "", content: str = "", title: str = "") -> str:
+    try:
+        base = _resolve_path(path)
+        if not name:
+            name = "presentation.pptx"
+        elif not name.lower().endswith((".pptx", ".ppt")):
+            name += ".pptx"
+        target = (base / name) if base.is_dir() else base
+        if not _is_safe_path(target):
+            return f"Access denied: {target}"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        existed = target.exists()
+        prev_bytes = None
+        if existed:
+            try:
+                prev_bytes = target.read_bytes()
+            except Exception:
+                prev_bytes = None
+
+        res = _build_pptx_file(target, content, title=title or target.stem)
+        push_undo(f"created {target.name}",
+                  _undo_write_bytes(target, prev_bytes) if existed else _undo_create(target))
+        return res
+    except Exception as e:
+        return f"Could not create presentation: {e}"
+
+
+def create_docx(path: str, name: str = "", content: str = "", title: str = "") -> str:
+    try:
+        base = _resolve_path(path)
+        if not name:
+            name = "document.docx"
+        elif not name.lower().endswith((".docx", ".doc")):
+            name += ".docx"
+        target = (base / name) if base.is_dir() else base
+        if not _is_safe_path(target):
+            return f"Access denied: {target}"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        existed = target.exists()
+        prev_bytes = None
+        if existed:
+            try:
+                prev_bytes = target.read_bytes()
+            except Exception:
+                prev_bytes = None
+
+        res = _build_docx_file(target, content, title=title or target.stem)
+        push_undo(f"created {target.name}",
+                  _undo_write_bytes(target, prev_bytes) if existed else _undo_create(target))
+        return res
+    except Exception as e:
+        return f"Could not create Word document: {e}"
+
+
+def create_file(path: str, name: str = "", content: str = "", title: str = "") -> str:
     try:
         base   = _resolve_path(path)
         target = (base / name) if name else base
         if not _is_safe_path(target):
             return f"Access denied: {target}"
         target.parent.mkdir(parents=True, exist_ok=True)
+
+        ext = target.suffix.lower()
+        if ext in (".pptx", ".ppt"):
+            return create_pptx(str(target.parent), name=target.name, content=content, title=title)
+        elif ext in (".docx", ".doc"):
+            return create_docx(str(target.parent), name=target.name, content=content, title=title)
+
         existed = target.exists()
         previous = None
         if existed:
@@ -404,6 +609,37 @@ def read_file(path: str, name: str = "", max_chars: int = 4000) -> str:
         if not target.is_file():
             return f"Not a file: {target.name}"
 
+        ext = target.suffix.lower()
+        if ext in (".docx", ".doc"):
+            try:
+                from docx import Document
+                doc = Document(target)
+                content = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+                if len(content) > max_chars:
+                    content = content[:max_chars] + f"\n\n[Truncated — {len(content)} total chars]"
+                return content or "Document contains no text."
+            except Exception as de:
+                return f"Could not read Word document: {de}"
+
+        elif ext in (".pptx", ".ppt"):
+            try:
+                from pptx import Presentation
+                prs = Presentation(target)
+                slides_text = []
+                for i, slide in enumerate(prs.slides, 1):
+                    lines = []
+                    for shape in slide.shapes:
+                        if hasattr(shape, "text") and shape.text.strip():
+                            lines.append(shape.text.strip())
+                    if lines:
+                        slides_text.append(f"--- Slide {i} ---\n" + "\n".join(lines))
+                content = "\n\n".join(slides_text)
+                if len(content) > max_chars:
+                    content = content[:max_chars] + f"\n\n[Truncated — {len(content)} total chars]"
+                return content or "Presentation contains no text."
+            except Exception as pe:
+                return f"Could not read presentation: {pe}"
+
         content = target.read_text(encoding="utf-8", errors="ignore")
         if len(content) > max_chars:
             content = content[:max_chars] + f"\n\n[Truncated — {len(content)} total chars]"
@@ -414,13 +650,19 @@ def read_file(path: str, name: str = "", max_chars: int = 4000) -> str:
 
 
 def write_file(path: str, name: str = "", content: str = "",
-               append: bool = False) -> str:
+               append: bool = False, title: str = "") -> str:
     try:
         base   = _resolve_path(path)
         target = (base / name) if name else base
         if not _is_safe_path(target):
             return f"Access denied: {target}"
         target.parent.mkdir(parents=True, exist_ok=True)
+
+        ext = target.suffix.lower()
+        if ext in (".pptx", ".ppt"):
+            return create_pptx(str(target.parent), name=target.name, content=content, title=title)
+        elif ext in (".docx", ".doc"):
+            return create_docx(str(target.parent), name=target.name, content=content, title=title)
 
         # Snapshot before writing. None means "did not exist", which is a
         # different undo (delete it) from "existed and had this in it".
@@ -663,8 +905,14 @@ def file_controller(
         if action == "list":
             return list_files(path)
 
+        elif action in ("create_ppt", "create_pptx"):
+            return create_pptx(path, name=name, content=params.get("content", ""), title=params.get("title", ""))
+
+        elif action in ("create_word", "create_docx", "create_doc"):
+            return create_docx(path, name=name, content=params.get("content", ""), title=params.get("title", ""))
+
         elif action == "create_file":
-            return create_file(path, name=name, content=params.get("content", ""))
+            return create_file(path, name=name, content=params.get("content", ""), title=params.get("title", ""))
 
         elif action == "create_folder":
             return create_folder(path, name=name)
@@ -688,7 +936,8 @@ def file_controller(
             return write_file(
                 path, name=name,
                 content=params.get("content", ""),
-                append=params.get("append", False)
+                append=params.get("append", False),
+                title=params.get("title", ""),
             )
 
         elif action == "find":
@@ -724,13 +973,17 @@ def file_controller(
 # ── Tool declaration (auto-discovered by core/action_loader.py) ──────────────
 TOOL = {
     "name": "file_controller",
-    "description": "Manages files and folders: list, create, delete, move, copy, rename, read, write, find, disk usage.",
+    "description": (
+        "Manages files, documents, and presentations: create PowerPoint presentations (.pptx), "
+        "Word documents (.docx), text and code files, folders; list, read, write, rename, move, "
+        "copy, delete, find, disk usage."
+    ),
     "parameters": {
         "type": "OBJECT",
         "properties": {
             "action": {
                 "type": "STRING",
-                "description": "list | create_file | create_folder | delete | move | copy | rename | read | write | find | largest | disk_usage | organize_desktop | info"
+                "description": "list | create_file | create_ppt | create_word | create_folder | delete | move | copy | rename | read | write | find | largest | disk_usage | organize_desktop | info"
             },
             "path": {
                 "type": "STRING",
@@ -744,13 +997,17 @@ TOOL = {
                 "type": "STRING",
                 "description": "New name for rename"
             },
+            "title": {
+                "type": "STRING",
+                "description": "Optional title for document or presentation (e.g. 'Project Roadmap')"
+            },
             "content": {
                 "type": "STRING",
-                "description": "Content for create_file/write"
+                "description": "Content for the file. For Word (.docx), provide formatted text with headings (#, ##) and paragraphs. For PowerPoint (.pptx), provide structured slides ('Slide 1: Title\\n- Bullet 1\\n- Bullet 2' or '---' dividers)."
             },
             "name": {
                 "type": "STRING",
-                "description": "File name to search for"
+                "description": "File name (e.g. 'report.docx', 'presentation.pptx', 'notes.txt')"
             },
             "extension": {
                 "type": "STRING",

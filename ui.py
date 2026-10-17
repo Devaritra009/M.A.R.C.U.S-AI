@@ -39,7 +39,7 @@ from PyQt6.QtGui import (
     QPen, QPixmap, QRadialGradient, QShortcut,
 )
 from PyQt6.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
+    QApplication, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
     QMainWindow, QPushButton, QScrollArea, QSizePolicy, QSplitter,
     QStackedWidget, QTextEdit, QVBoxLayout, QWidget,
 )
@@ -66,7 +66,7 @@ def _read_full_config() -> dict:
 
 # Single source of truth for the release name — the window title, the header
 # badge and the readme must never disagree again.
-APP_VERSION  = "MARCUS v1.1"
+APP_VERSION  = "MARCUS v1.2"
 APP_PROTOCOL = APP_VERSION.split()[-1]
 
 _DEFAULT_W, _DEFAULT_H = 1160, 780
@@ -1502,7 +1502,7 @@ class CustomizeOverlay(QWidget):
     """Floating overlay — change assistant name, user name, UI colour and voice."""
 
     saved = pyqtSignal(str, str, str, str)   # assistant_name, user_name, ui_color, voice
-    _OW, _OH = 400, 588
+    _OW, _OH = 400, 620
 
     def __init__(self, assistant_name="MARCUS", user_name="",
                  ui_color=DEFAULT_UI_COLOR, voice="", parent=None):
@@ -1564,8 +1564,8 @@ class CustomizeOverlay(QWidget):
         if self._sel_voice not in AVAILABLE_VOICES:
             self._sel_voice = DEFAULT_VOICE
         self._voice_btns: dict[str, QPushButton] = {}
-        voice_row = QHBoxLayout(); voice_row.setSpacing(4)
-        for _v in AVAILABLE_VOICES:
+        voice_grid = QGridLayout(); voice_grid.setSpacing(4)
+        for idx, _v in enumerate(AVAILABLE_VOICES):
             b = QPushButton(_v)
             b.setCheckable(True)
             b.setFixedHeight(28)
@@ -1573,8 +1573,8 @@ class CustomizeOverlay(QWidget):
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.clicked.connect(lambda _=False, name=_v: self._on_voice_pick(name))
             self._voice_btns[_v] = b
-            voice_row.addWidget(b)
-        lay.addLayout(voice_row)
+            voice_grid.addWidget(b, idx // 4, idx % 4)
+        lay.addLayout(voice_grid)
         self._refresh_voice_btns()
 
         # ── UI colour — colour wheel ─────────────────────────────────────────
@@ -5016,9 +5016,7 @@ class MainWindow(QMainWindow):
         display = self._assistant_name.upper()
         self.setWindowTitle(f"{display} — {APP_VERSION}")
         self._title_lbl.setText(display)
-        if display in ("MARCUS", "JARVIS", "J.A.R.V.I.S"):
-            self._sub_lbl.setText("Personal AI Assistant")
-        else:
+        if hasattr(self, "_sub_lbl") and self._sub_lbl:
             self._sub_lbl.setText("Personal AI Assistant")
         self._log._ai_name_lc = self._assistant_name.lower()
         self.hud._assistant_name = display
@@ -5046,6 +5044,8 @@ class MainWindow(QMainWindow):
             data["user_name"] = user_name.strip()
             if ui_color:
                 data["ui_color"] = ui_color.strip().lower()
+            if voice:
+                data["voice_name"] = voice.strip()
             API_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
             self._log.append_log(f"SYS: Identity updated — {display}")
             if color_changed:

@@ -41,20 +41,32 @@ def is_installed() -> bool:
         return False
 
 
+_READY_CACHE: bool | None = None
+
+
 def is_ready() -> bool:
     """True if openwakeword is installed AND its model files are present on disk.
 
-    This is a cheap, DETERMINISTIC file-existence check. It deliberately does NOT
-    construct a Model to probe readiness — doing that is slow and, worse, can clash
-    with the detector's own Model when it's already running, which intermittently
-    returned False and made the UI flicker to 'not downloaded'. Never raises.
+    Uses importlib.util.find_spec to locate the package directory without
+    importing openwakeword, avoiding loading heavy libraries (ONNX, torch, scipy)
+    onto the UI thread and keeping startup latency and RAM near zero.
     """
+    global _READY_CACHE
+    if _READY_CACHE is not None:
+        return _READY_CACHE
     if not is_installed():
+        _READY_CACHE = False
         return False
     try:
-        import openwakeword
-        models_dir = Path(openwakeword.__file__).resolve().parent / "resources" / "models"
+        import importlib.util
+        spec = importlib.util.find_spec("openwakeword")
+        if not spec or not spec.submodule_search_locations:
+            _READY_CACHE = False
+            return False
+        pkg_dir = Path(spec.submodule_search_locations[0])
+        models_dir = pkg_dir / "resources" / "models"
         if not models_dir.is_dir():
+            _READY_CACHE = False
             return False
         has_wake = (any(models_dir.glob(f"{WAKE_MODEL}*.onnx"))
                     or any(models_dir.glob(f"{WAKE_MODEL}*.tflite")))
@@ -62,9 +74,12 @@ def is_ready() -> bool:
                    or any(models_dir.glob("melspectrogram*.tflite")))
         has_emb = (any(models_dir.glob("embedding_model*.onnx"))
                    or any(models_dir.glob("embedding_model*.tflite")))
-        return bool(has_wake and has_mel and has_emb)
+        _READY_CACHE = bool(has_wake and has_mel and has_emb)
+        return _READY_CACHE
     except Exception:
+        _READY_CACHE = False
         return False
+
 
 
 def install_and_download(logger: Callable[[str], None] = print,
@@ -98,6 +113,8 @@ def install_and_download(logger: Callable[[str], None] = print,
         except Exception as e:
             return False, f"model download failed: {e}"
 
+        global _READY_CACHE
+        _READY_CACHE = None
         if not is_ready():
             return False, "installed, but the wake model could not be loaded."
         logger("Wake word: ready.")

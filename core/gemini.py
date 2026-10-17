@@ -114,10 +114,10 @@ SEARCH = "search"  # grounded search — REST only, see below
 LIVE = "live"
 
 _LADDERS = {
-    FAST: ("gemini-flash-lite-latest", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-flash-latest"),
-    SMART: ("gemini-flash-lite-latest", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-flash-latest"),
+    FAST: ("gemini-flash-lite-latest", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-3.5-flash", LIVE),
+    SMART: ("gemini-flash-lite-latest", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-3.5-flash", LIVE),
     # Grounded search needs response.candidates[...].grounding_metadata
-    SEARCH: ("gemini-flash-lite-latest", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-flash-latest"),
+    SEARCH: ("gemini-flash-lite-latest", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-3.5-flash"),
 }
 
 # The Live model to use for one-shot calls. main.py owns the real one; this is
@@ -171,7 +171,7 @@ _cached_key: str | None = None
 # lite rung was 429ing continuously, so every call was paying for it before
 # reaching the model that could actually answer. Remembering that for a few
 # minutes turns the ladder from a cost into a saving.
-_COOLDOWN_SECONDS = 300
+_COOLDOWN_SECONDS = 120
 _cooldown: dict[str, float] = {}
 _cool_lock = threading.Lock()
 
@@ -289,21 +289,35 @@ async def _live_turn(parts: list, system: str, key: str, timeout_s: float) -> st
         await session.send_client_content(
             turns={"role": "user", "parts": parts}, turn_complete=True)
         chunks: list[str] = []
+        loop = asyncio.get_running_loop()
+        last_text_time = None
 
         async def drain():
-            async for resp in session.receive():
+            nonlocal last_text_time
+            while True:
+                try:
+                    # Once text has started arriving, allow up to 1.0s between chunks before concluding turn is complete
+                    wait_limit = 1.0 if last_text_time is not None else timeout_s
+                    resp = await asyncio.wait_for(session.receive().__anext__(), timeout=wait_limit)
+                except (asyncio.TimeoutError, StopAsyncIteration):
+                    break
                 sc = getattr(resp, "server_content", None)
-                if sc and sc.output_transcription and sc.output_transcription.text:
-                    chunks.append(sc.output_transcription.text)
+                ot = getattr(sc, "output_transcription", None) if sc else None
+                txt = getattr(ot, "text", None) if ot else None
+                now = loop.time()
+                if txt:
+                    chunks.append(txt)
+                    last_text_time = now
+                if sc and getattr(sc, "turn_complete", False):
+                    break
+                if last_text_time is not None and (now - last_text_time) > 0.8:
+                    break
 
-        await asyncio.wait_for(drain(), timeout=timeout_s)
-        # The transcription can trail the audio turn by a beat; a short second
-        # drain stops a reply being cut mid-token. chat_takeover learned this
-        # the same way and for the same reason.
         try:
-            await asyncio.wait_for(drain(), timeout=1.5)
+            await asyncio.wait_for(drain(), timeout=timeout_s)
         except asyncio.TimeoutError:
-            pass
+            if not chunks:
+                raise
         return "".join(chunks).strip()
     finally:
         try:
@@ -388,6 +402,12 @@ def call(contents, tier: str = FAST, config=None,
     for model in tried:
         try:
             if model == LIVE:
+                # Live one-shot cannot handle REST tool-calling configs (e.g. Google Search)
+                has_tools = False
+                if config is not None:
+                    has_tools = bool(getattr(config, "tools", None) or (isinstance(config, dict) and config.get("tools")))
+                if has_tools:
+                    continue
                 reply = _live_call(contents, config, timeout_ms, resolved_key)
                 if reply is not None:
                     return reply
@@ -400,7 +420,7 @@ def call(contents, tier: str = FAST, config=None,
             return cl.models.generate_content(**kwargs)
         except Exception as e:
             msg = str(e)
-            if any(term in msg for term in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE", "high demand", "404", "NOT_FOUND")):
+            if any(term in msg for term in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE", "high demand", "404", "NOT_FOUND", "504", "DEADLINE_EXCEEDED")):
                 _cool(model)
                 print(f"[Gemini] {model}: temporarily unavailable ({type(e).__name__}) — skipping it for "
                       f"{_COOLDOWN_SECONDS // 60} minutes")
@@ -426,12 +446,24 @@ def as_json(contents, tier: str = FAST, config=None,
     raw = text(contents, tier=tier, config=config, timeout_ms=timeout_ms, key=key)
     if not raw:
         return default
-    if "{" in raw and "}" in raw:
-        raw = raw[raw.find("{"): raw.rfind("}") + 1]
-    elif "[" in raw and "]" in raw:
-        raw = raw[raw.find("["): raw.rfind("]") + 1]
+    candidate = raw
+    if "{" in candidate and "}" in candidate:
+        candidate = candidate[candidate.find("{"): candidate.rfind("}") + 1]
+    elif "[" in candidate and "]" in candidate:
+        candidate = candidate[candidate.find("["): candidate.rfind("]") + 1]
     try:
-        return json.loads(raw)
-    except Exception as e:
-        print(f"[Gemini] reply was not JSON: {e}")
-        return default
+        return json.loads(candidate)
+    except Exception:
+        # Fallback: strip markdown fences
+        import re
+        cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.MULTILINE)
+        cleaned = re.sub(r"\s*```$", "", cleaned.strip(), flags=re.MULTILINE)
+        if "{" in cleaned and "}" in cleaned:
+            cleaned = cleaned[cleaned.find("{"): cleaned.rfind("}") + 1]
+        elif "[" in cleaned and "]" in cleaned:
+            cleaned = cleaned[cleaned.find("["): cleaned.rfind("]") + 1]
+        try:
+            return json.loads(cleaned)
+        except Exception as e:
+            print(f"[Gemini] reply was not JSON: {e}")
+            return default

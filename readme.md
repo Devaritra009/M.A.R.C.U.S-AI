@@ -1,24 +1,62 @@
-# ⚙️ MARCUS v1.1
+# ⚙️ MARCUS v1.2
 ### The Ultimate Autonomous Real-Time Personal AI Assistant
 **Created by [Aritra Sarkar](https://aritrasarkarportfolio.vercel.app/)**  
 [![Portfolio](https://img.shields.io/badge/Portfolio-Aritra_Sarkar-00e5ff?style=for-the-badge&logo=vercel&logoColor=white)](https://aritrasarkarportfolio.vercel.app/)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-devaritra-0a66c2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/devaritra/)
-[![Version](https://img.shields.io/badge/Version-1.1_Release-00ff9d?style=for-the-badge)](https://github.com/)
+[![Version](https://img.shields.io/badge/Version-1.2_Release-00ff9d?style=for-the-badge)](https://github.com/)
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
 ---
 
-## 🌟 Welcome to MARCUS v1.1
+## 🌟 Welcome to MARCUS v1.2
 
-**MARCUS v1.1** is a premier, cross-platform personal AI operating system and assistant engineered from the ground up to hear, see, speak, reason, and operate your machine in real time. Powered by Google's native **Gemini Live API**, MARCUS delivers bidirectional voice conversations, computer control, vision understanding, and an extensible plugin ecosystem — with **zero subscriptions** and **total user autonomy**.
+**MARCUS v1.2** is a premier, cross-platform personal AI operating system and assistant engineered from the ground up to hear, see, speak, reason, and operate your machine in real time. Powered by Google's native **Gemini Live API**, MARCUS delivers bidirectional voice conversations, computer control, vision understanding, and an extensible plugin ecosystem — with **zero subscriptions** and **total user autonomy**.
 
 ---
 
 ## 🚀 Version Updates & Changelog
 
+<details open>
+<summary><b>✨ What's New in Version 1.2 (Latest Release — Click to Collapse)</b></summary>
+
+<br>
+
+### 🛠️ 1. Real-Time Audio Callback & Loop Stability Fixes
+* **Eliminated Callback Queue Overflows (`QueueFull`):** Resolved the critical exception in `loop.call_soon_threadsafe(self.out_queue.put_nowait)` where backpressure during long sessions or tool execution caused `asyncio.QueueFull` errors inside the asyncio callback handler.
+* **FIFO Real-Time Frame Shedding (`_enqueue_mic_audio`):** Dynamic shedding of oldest buffer frames during high-load periods ensures zero speech lag and guarantees that microphone callbacks remain non-blocking.
+* **Thread-Safe Exception Isolation:** The PortAudio audio input stream callback is guarded against unhandled exceptions, preventing sudden stream terminations or crashes.
+* **Clean Queue Reconnect Lifecycle:** Audio input/output queues are sanitized and purged on reconnection, preventing stale pre-disconnect audio from transmitting to fresh Gemini Live sessions.
+
+### ⚡ 2. Multi-Tier Model Fallback & Reconnection Engine
+* **High-RPM Fallback Ladder:** Re-architected model ladder prioritization with ultra-fast REST tiers (`gemini-flash-lite-latest`, `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`, `gemini-flash-latest`, `gemini-3.5-flash`) with one-shot `LIVE` sessions serving as an ultimate safety net.
+* **Fast-Cycling Quota Cooldown:** Reduced rate-limit cooldown to 120 seconds to match the 1-minute RPM reset cycles of the Google AI Studio free tier.
+* **Recursive ExceptionGroup Unwrapping:** Implemented `_flatten_exc_str` to inspect nested sub-exceptions within Python 3.11+ `TaskGroup` errors. Properly detects expired session resumption handles, `1008` duration limits, and `INVALID_ARGUMENT` codes, eliminating infinite reconnection loops.
+* **Optimized Live Transcription Draining:** Prevented artificial timeouts during Live one-shot turns by sampling packet arrival times on every received stream event.
+
+### 📑 3. Autonomous PowerPoint & Word Document Engine (`file_controller`)
+* **PowerPoint Presentations (`.pptx`):** Create complete presentations with title slides, structured outlines, bullet points, and multi-slide layouts via voice or text (`action='create_ppt'`).
+* **Word Documents (`.docx`):** Generate formatted Word documents with headings (`#`, `##`), structured paragraphs, and clean styling via `action='create_word'`.
+* **Direct Office Document Reading:** Enhanced `read_file` to inspect and extract text from `.docx` and `.pptx` documents natively without requiring external software.
+
+### 🎙️ 4. Voice Persona & Identity Expansion
+* **New Prebuilt Voices:** Added **`Leda`**, **`Orus`**, and **`Zephyr`** alongside `Charon`, `Puck`, `Kore`, `Fenrir`, and `Aoede`.
+* **Customizer Voice Grid:** Replaced the horizontal voice bar with a modern 4-column responsive grid layout in the settings drawer.
+* **Voice Configuration Persistence:** Fixed voice choice persistence when updating assistant configuration from the customize overlay.
+
+### 🧠 5. Dynamic RAM Trimming & Lazy-Loading Architecture
+* **Generational Memory Trimming (`core/mem_trim.py`):** Background system monitor triggers periodic garbage collection and OS working set memory reclamation every 60 seconds.
+* **Lazy Dependency Loading:** Defer loading heavy automation packages (Playwright, PyAutoGUI, OpenCV, WMI, and GenAI types) until invoked, saving over 50 MB of memory on initial launch.
+
+### 🛑 6. Safe Power & Shutdown Disambiguation
+* **Explicit Marcus Shutdown:** Clear directive distinction between closing the MARCUS assistant application (`shutdown_marcus`) versus physical PC shutdown (`computer_settings`). Saying *"shutdown yourself"* or *"close Marcus"* cleanly terminates Marcus without triggering an unwanted PC reboot/shutdown prompt.
+
+</details>
+
+<br>
+
 <details>
-<summary><b>✨ What's New in Version 1.1 (Click to Expand)</b></summary>
+<summary><b>📜 Previous Releases: What's New in Version 1.1 (Click to Expand)</b></summary>
 
 <br>
 
@@ -288,6 +326,6 @@ MARCUS includes a built-in HTTPS remote control dashboard:
 ---
 
 <p align="center">
-  <b>MARCUS v1.1</b> • <i>Curious. Creative. Experimental.</i><br>
+  <b>MARCUS v1.2</b> • <i>Curious. Creative. Experimental.</i><br>
   Built with ❤️ by Aritra Sarkar
 </p>

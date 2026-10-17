@@ -69,21 +69,30 @@ def _nvml_gpu() -> float:
         return -1.0
 
 
+_wmi_conn = None
+_wmi_failed = False
+_pynvml_h = None
+_pynvml_failed = False
+
+
 def _get_gpu_usage() -> float:
-    # pynvml — subprocess-free, works everywhere if installed
-    try:
-        import pynvml  # type: ignore
-        pynvml.nvmlInit()
-        h = pynvml.nvmlDeviceGetHandleByIndex(0)
-        return float(pynvml.nvmlDeviceGetUtilizationRates(h).gpu)
-    except Exception:
-        pass
+    global _pynvml_h, _pynvml_failed
+    if not _pynvml_failed:
+        try:
+            if _pynvml_h is None:
+                import pynvml  # type: ignore
+                pynvml.nvmlInit()
+                _pynvml_h = pynvml.nvmlDeviceGetHandleByIndex(0)
+            import pynvml  # type: ignore
+            return float(pynvml.nvmlDeviceGetUtilizationRates(_pynvml_h).gpu)
+        except Exception:
+            _pynvml_failed = True
 
     return _nvml_gpu()
 
 
 def _get_cpu_temp() -> float:
-    # psutil — works on Linux; occasionally Windows with proper drivers
+    global _wmi_conn, _wmi_failed
     try:
         temps = psutil.sensors_temperatures()
         for name in ["coretemp", "k10temp", "cpu_thermal", "acpitz",
@@ -96,16 +105,16 @@ def _get_cpu_temp() -> float:
     except Exception:
         pass
 
-    # Windows: wmi module (pure Python COM, zero subprocess)
-    if _OS == "Windows":
+    if _OS == "Windows" and not _wmi_failed:
         try:
-            import wmi  # type: ignore
-            w = wmi.WMI(namespace="root/wmi")
-            tz = w.MSAcpi_ThermalZoneTemperature()
+            if _wmi_conn is None:
+                import wmi  # type: ignore
+                _wmi_conn = wmi.WMI(namespace="root/wmi")
+            tz = _wmi_conn.MSAcpi_ThermalZoneTemperature()
             if tz:
                 return (tz[0].CurrentTemperature / 10.0) - 273.15
         except Exception:
-            pass
+            _wmi_failed = True
 
     return -1.0
 
