@@ -3,7 +3,7 @@
 **Created by [Aritra Sarkar](https://aritrasarkarportfolio.vercel.app/)**  
 [![Portfolio](https://img.shields.io/badge/Portfolio-Aritra_Sarkar-00e5ff?style=for-the-badge&logo=vercel&logoColor=white)](https://aritrasarkarportfolio.vercel.app/)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-devaritra-0a66c2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/devaritra/)
-[![Version](https://img.shields.io/badge/Version-1.2_Release-00ff9d?style=for-the-badge)](https://github.com/)
+[![Version](https://img.shields.io/badge/Version-1.2_Release-00ff9d?style=for-the-badge)](https://github.com/Devaritra009/M.A.R.C.U.S-AI)
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
@@ -224,8 +224,8 @@ flowchart TD
 
 1. **Clone the Repository:**
    ```bash
-   git clone https://github.com/Devaritra009/MARCUS.git
-   cd MARCUS
+   git clone https://github.com/Devaritra009/M.A.R.C.U.S-AI.git
+   cd M.A.R.C.U.S-AI
    ```
 
 2. **Set Up Virtual Environment:**
